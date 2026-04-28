@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Supabase Dashboard</title>
+
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      padding: 20px;
+      background: #f4f4f4;
+    }
+
+    h2 {
+      margin-bottom: 10px;
+    }
+
+    button {
+      padding: 8px 12px;
+      cursor: pointer;
+      margin-bottom: 10px;
+    }
+
+    #status {
+      margin-top: 10px;
+      font-weight: bold;
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+      background: white;
+    }
+
+    th, td {
+      border: 1px solid #ddd;
+      padding: 8px;
+      text-align: left;
+    }
+
+    th {
+      background: #333;
+      color: white;
+    }
+
+    .error {
+      color: red;
+    }
+  </style>
+</head>
+
+<body>
+
+<h2>📊 Supabase Contacts Dashboard</h2>
+
+<button onclick="loadData()">🔄 Load Data</button>
+
+<div id="status"></div>
+
+<table>
+  <thead id="thead"></thead>
+  <tbody id="tbody"></tbody>
+</table>
+
+<script>
+async function loadData() {
+  const status = document.getElementById("status");
+  const thead = document.getElementById("thead");
+  const tbody = document.getElementById("tbody");
+
+  status.innerText = "Loading...";
+  status.className = "";
+
+  thead.innerHTML = "";
+  tbody.innerHTML = "";
+
+  try {
+    const res = await fetch("https://supa-indol.vercel.app/api/data");
+
+    const text = await res.text();
+    let data;
+
+    try {
+      data = JSON.parse(text);
+    } catch (e) {
+      status.innerHTML = "<span class='error'>Invalid JSON response</span>";
+      console.log("RAW RESPONSE:", text);
+      return;
+    }
+
+    console.log("API RESPONSE:", data);
+
+    // ❌ Handle backend error
+    if (data?.error) {
+      status.innerHTML = "<span class='error'>Error: " + data.error + "</span>";
+      return;
+    }
+
+    // ❌ Handle empty / invalid data
+    if (!Array.isArray(data) || data.length === 0) {
+      status.innerText = "No data found";
+      return;
+    }
+
+    status.innerText = "Loaded " + data.length + " rows";
+
+    renderTable(data);
+
+  } catch (err) {
+    status.innerHTML = "<span class='error'>Error: " + err.message + "</span>";
+  }
+}
+
+function renderTable(data) {
+  const thead = document.getElementById("thead");
+  const tbody = document.getElementById("tbody");
+
+  thead.innerHTML = "";
+  tbody.innerHTML = "";
+
+  // 🧠 SAFE: ensure data exists
+  if (!data || !data.length) return;
+
+  const keys = Object.keys(data[0]);
+
+  // Header
+  let headerRow = "<tr>";
+  keys.forEach(key => {
+    headerRow += `<th>${key}</th>`;
+  });
+  headerRow += "</tr>";
+  thead.innerHTML = headerRow;
+
+  // Rows
+  data.forEach(row => {
+    let rowHtml = "<tr>";
+    keys.forEach(key => {
+      rowHtml += `<td>${row?.[key] ?? ""}</td>`;
+    });
+    rowHtml += "</tr>";
+    tbody.innerHTML += rowHtml;
+  });
+}
+</script>
+
+</body>
+</html>
