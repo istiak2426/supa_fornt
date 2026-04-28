@@ -2,8 +2,9 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8" />
-<title>Supabase Smart Dashboard</title>
+<title>Live Supabase Dashboard</title>
 
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js"></script>
 <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 
 <style>
@@ -13,24 +14,25 @@ body {
   background: #f4f4f4;
 }
 
-h2 {
+.controls {
+  display: flex;
+  gap: 10px;
   margin-bottom: 10px;
 }
 
-button {
-  padding: 8px 12px;
-  cursor: pointer;
+input {
+  padding: 6px;
 }
 
-#status {
-  margin-top: 10px;
-  font-weight: bold;
+button {
+  padding: 6px 10px;
+  cursor: pointer;
 }
 
 .cards {
   display: flex;
   gap: 15px;
-  margin-top: 20px;
+  margin: 20px 0;
 }
 
 .card {
@@ -38,11 +40,6 @@ button {
   padding: 15px;
   flex: 1;
   border-radius: 8px;
-  box-shadow: 0 2px 5px rgba(0,0,0,0.1);
-}
-
-.card h3 {
-  margin: 0;
 }
 
 canvas {
@@ -53,8 +50,8 @@ canvas {
 
 table {
   width: 100%;
-  margin-top: 20px;
   background: white;
+  margin-top: 20px;
   border-collapse: collapse;
 }
 
@@ -68,82 +65,128 @@ th {
   color: white;
 }
 
-.error {
-  color: red;
+.pagination {
+  margin-top: 10px;
 }
 </style>
 </head>
 
 <body>
 
-<h2>📊 Smart Data Dashboard</h2>
+<h2>📊 Live Supabase Dashboard</h2>
 
-<button onclick="loadData()">🔄 Load Data</button>
+<div class="controls">
+  <button onclick="loadData()">🔄 Load Data</button>
+  <input type="text" id="search" placeholder="Search..." onkeyup="applyFilter()" />
+  <button onclick="exportCSV()">📥 Export CSV</button>
+</div>
 
 <div id="status"></div>
 
-<!-- SUMMARY -->
 <div class="cards">
   <div class="card">
-    <h3>Total Records</h3>
+    <h3>Total Rows</h3>
     <p id="total">0</p>
   </div>
 
   <div class="card">
-    <h3>Columns</h3>
-    <p id="columns">0</p>
+    <h3>Unique (First Column)</h3>
+    <p id="unique">0</p>
   </div>
 </div>
 
-<!-- CHART -->
-<canvas id="chart"></canvas>
+<canvas id="barChart"></canvas>
+<canvas id="pieChart"></canvas>
 
-<!-- TABLE -->
 <table>
   <thead id="thead"></thead>
   <tbody id="tbody"></tbody>
 </table>
 
-<script>
-let chart;
+<div class="pagination">
+  <button onclick="prevPage()">⬅ Prev</button>
+  <span id="pageInfo"></span>
+  <button onclick="nextPage()">Next ➡</button>
+</div>
 
+<script>
+// 🔑 CONFIG
+const SUPABASE_URL = "https://oxilhnuwjvwcgftplxyl.supabase.co";
+const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im94aWxobnV3anZ3Y2dmdHBseHlsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzYwNTI3NzMsImV4cCI6MjA5MTYyODc3M30.DsVVqSASKXzQEWZMQ-hmRre1kIWDFiJMTMNzz5jNF48";
+const TABLE_NAME = "contacts";
+
+// 🚀 INIT
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+let fullData = [];
+let filteredData = [];
+let page = 1;
+const pageSize = 10;
+
+let barChart, pieChart;
+
+// 📡 LOAD DATA (LIVE)
 async function loadData() {
   const status = document.getElementById("status");
-
-  status.innerText = "Loading...";
+  status.innerText = "Loading live data...";
 
   try {
-    const res = await fetch("https://supa-indol.vercel.app/api/data");
-    const data = await res.json();
+    const { data, error } = await supabase
+      .from(TABLE_NAME)
+      .select("*");
 
-    if (!Array.isArray(data) || data.length === 0) {
+    if (error) {
+      status.innerText = "Error: " + error.message;
+      return;
+    }
+
+    if (!data || data.length === 0) {
       status.innerText = "No data found";
       return;
     }
 
     status.innerText = "Loaded " + data.length + " rows";
 
-    renderSummary(data);
-    renderChart(data);
-    renderTable(data);
+    fullData = data;
+    filteredData = data;
+
+    renderInsights(data);
+    renderCharts(data);
+    renderTable();
 
   } catch (err) {
-    status.innerHTML = "<span class='error'>" + err.message + "</span>";
+    status.innerText = err.message;
   }
 }
 
-// 📊 SUMMARY
-function renderSummary(data) {
-  document.getElementById("total").innerText = data.length;
-  document.getElementById("columns").innerText = Object.keys(data[0]).length;
+// 🔍 FILTER
+function applyFilter() {
+  const term = document.getElementById("search").value.toLowerCase();
+
+  filteredData = fullData.filter(row =>
+    Object.values(row).some(val =>
+      String(val).toLowerCase().includes(term)
+    )
+  );
+
+  page = 1;
+  renderTable();
 }
 
-// 📈 CHART (auto detect first column frequency)
-function renderChart(data) {
-  const key = Object.keys(data[0])[0]; // first column
+// 📊 INSIGHT
+function renderInsights(data) {
+  const key = Object.keys(data[0])[0];
+  const unique = new Set(data.map(d => d[key]));
+
+  document.getElementById("total").innerText = data.length;
+  document.getElementById("unique").innerText = unique.size;
+}
+
+// 📈 CHARTS
+function renderCharts(data) {
+  const key = Object.keys(data[0])[0];
 
   const counts = {};
-
   data.forEach(row => {
     const val = row[key] || "Unknown";
     counts[val] = (counts[val] || 0) + 1;
@@ -152,37 +195,91 @@ function renderChart(data) {
   const labels = Object.keys(counts);
   const values = Object.values(counts);
 
-  if (chart) chart.destroy();
+  if (barChart) barChart.destroy();
+  if (pieChart) pieChart.destroy();
 
-  const ctx = document.getElementById("chart");
-
-  chart = new Chart(ctx, {
+  barChart = new Chart(document.getElementById("barChart"), {
     type: "bar",
     data: {
-      labels: labels,
-      datasets: [{
-        label: key + " distribution",
-        data: values
-      }]
+      labels,
+      datasets: [{ label: key, data: values }]
+    }
+  });
+
+  pieChart = new Chart(document.getElementById("pieChart"), {
+    type: "pie",
+    data: {
+      labels,
+      datasets: [{ data: values }]
     }
   });
 }
 
-// 📋 TABLE
-function renderTable(data) {
-  const thead = document.getElementById("thead");
-  const tbody = document.getElementById("tbody");
+// 📋 TABLE + PAGINATION
+function renderTable() {
+  const start = (page - 1) * pageSize;
+  const data = filteredData.slice(start, start + pageSize);
 
-  const keys = Object.keys(data[0]);
+  const keys = Object.keys(fullData[0]);
 
-  thead.innerHTML = "<tr>" + keys.map(k => `<th>${k}</th>`).join("") + "</tr>";
+  document.getElementById("thead").innerHTML =
+    "<tr>" + keys.map(k => `<th>${k}</th>`).join("") + "</tr>";
 
-  tbody.innerHTML = data.map(row =>
-    "<tr>" +
-    keys.map(k => `<td>${row[k] ?? ""}</td>`).join("") +
-    "</tr>"
-  ).join("");
+  document.getElementById("tbody").innerHTML =
+    data.map(row =>
+      "<tr>" +
+      keys.map(k => `<td>${row[k] ?? ""}</td>`).join("") +
+      "</tr>"
+    ).join("");
+
+  document.getElementById("pageInfo").innerText =
+    `Page ${page} / ${Math.ceil(filteredData.length / pageSize)}`;
 }
+
+// ⬅➡ PAGINATION
+function nextPage() {
+  if (page * pageSize < filteredData.length) {
+    page++;
+    renderTable();
+  }
+}
+
+function prevPage() {
+  if (page > 1) {
+    page--;
+    renderTable();
+  }
+}
+
+// 📥 EXPORT CSV
+function exportCSV() {
+  const keys = Object.keys(fullData[0]);
+
+  const rows = fullData.map(row =>
+    keys.map(k => `"${row[k]}"`).join(",")
+  );
+
+  const csv = [keys.join(","), ...rows].join("\n");
+
+  const blob = new Blob([csv], { type: "text/csv" });
+  const url = URL.createObjectURL(blob);
+
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "data.csv";
+  a.click();
+}
+
+// 🔴 REALTIME AUTO REFRESH
+supabase
+  .channel("live-data")
+  .on(
+    "postgres_changes",
+    { event: "*", schema: "public", table: TABLE_NAME },
+    () => loadData()
+  )
+  .subscribe();
+
 </script>
 
 </body>
